@@ -1,5 +1,5 @@
 /* Where it went: lets the app open offline. It only ever fetches this app's own files; your entries never pass through here. */
-const V = "where-it-went-v12";
+const V = "where-it-went-v14";
 const FILES = [
   "./",
   "./index.html",
