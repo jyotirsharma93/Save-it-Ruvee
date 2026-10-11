@@ -112,6 +112,17 @@
   .splitrow .sym{color:var(--goldtxt);font-family:var(--round);font-size:22px}
   .splitrow input{flex:1;min-width:0;min-height:48px;border:1px solid var(--sep);border-radius:12px;padding:0 12px;font:inherit;font-size:17px;background:var(--card);color:var(--label)}
   .splitrow .btn{min-height:48px;padding:0 18px}
+  .seg4{display:grid;grid-template-columns:repeat(4,1fr);background:var(--fill);border-radius:9px;padding:2px;margin:8px 0 6px;width:100%}
+  .seg4 button{border:0;background:none;min-height:34px;border-radius:7px;font-size:13px;font-weight:500;padding:0 2px;color:var(--label)}
+  .seg4 button[aria-checked="true"]{background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.2);font-weight:600}
+  .typerow{flex-direction:column;align-items:stretch!important;padding:10px 16px!important}
+  .typerow .t2{white-space:normal}
+  .ss{color:var(--label2);font-size:12px;margin-top:1px;min-height:15px}
+  .wrow .t2{white-space:normal}
+  .duerow{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:.5px solid var(--sep)}
+  .duerow .mid{flex:1;min-width:0}
+  .duerow .t2{white-space:normal}
+  .pillbtn{border:0;border-radius:999px;background:var(--tint);color:var(--on-tint);font-weight:600;font-size:14px;min-height:34px;padding:0 14px;white-space:nowrap}
   .delta2wrap{display:none;justify-content:center;margin:-4px 0 14px}
   [data-theme=inr] .delta2wrap{display:flex}
   .delta2{font-size:15px;font-weight:500;padding:6px 12px;border-radius:999px;background:var(--fill);color:var(--label2)}
@@ -332,8 +343,8 @@
       </div>
       <div class="delta2wrap"><span class="delta2" id="delta2"></span></div>
       <div class="stats">
-        <div><div class="sv" id="avg">-</div><div class="sl">Daily average</div></div>
-        <div><div class="sv" id="big">-</div><div class="sl">Biggest purchase</div></div>
+        <div><div class="sv" id="avg">-</div><div class="sl">Everyday spending</div><div class="ss" id="avgSub"></div></div>
+        <div><div class="sv" id="big">-</div><div class="sl">Fixed &amp; one-time</div><div class="ss">bills, EMIs, big buys</div></div>
       </div>
     </section>
 
@@ -421,8 +432,14 @@
       <div class="chiprow" id="chiprow"><div class="mchips" id="mchips"></div></div>
       <label class="row"><span class="k">Note</span><input id="note" type="text" maxlength="80" placeholder="Optional, no personal details" autocomplete="off" enterkeyhint="done"></label>
       <label class="row"><span class="k">Date</span><input id="date" type="date"></label>
-      <label class="row onerow"><span class="mid"><span class="t1">One-time cost</span><span class="t2">Won't repeat next month, so it stays out of your plan</span></span>
-        <input type="checkbox" class="switch" id="one" role="switch"></label>
+      <div class="row onerow typerow"><span class="mid"><span class="t1">Type of payment</span>
+        <span class="seg4" id="seg4" role="radiogroup" aria-label="Type of payment">
+          <button type="button" role="radio" aria-checked="true" data-t="e">Everyday</button>
+          <button type="button" role="radio" aria-checked="false" data-t="o">One-time</button>
+          <button type="button" role="radio" aria-checked="false" data-t="m">Monthly</button>
+          <button type="button" role="radio" aria-checked="false" data-t="y">Yearly</button>
+        </span>
+        <span class="t2" id="typeNote"></span></span></div>
     </div>
 
     <div class="keypad" id="keypad">
@@ -622,7 +639,7 @@
       var c=Math.round(Number(i.c)),id=Number(i.id);
       if(!isFinite(c)||c<=0||c>1e12||!isFinite(id))return;
       if(typeof i.date!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(i.date))return;
-      out.items.push({id:id,c:c,cat:names.indexOf(i.cat)>=0?i.cat:"Other",note:String(i.note||"").slice(0,80),who:String(i.who||"").slice(0,40),one:!!i.one,date:i.date});
+      out.items.push({id:id,c:c,cat:names.indexOf(i.cat)>=0?i.cat:"Other",note:String(i.note||"").slice(0,80),who:String(i.who||"").slice(0,40),one:!!i.one&&i.rec!=="m"&&i.rec!=="y",rec:(i.rec==="m"||i.rec==="y")?i.rec:"",date:i.date});
     });
     var b=data.budgets;
     if(b&&typeof b==="object"){
@@ -746,33 +763,68 @@
     return Math.max(step,v)*100;
   }
   function suggest(c,avg){var f=TRIM[c]||.9;return nice(avg*f,f===1)}
+  /* ---------- recurring payments ---------- */
+  function serKey(i){return i.who?mk(i.who)+"|"+i.cat:"|"+i.cat+"|"+i.c}
+  function getSeries(){
+    var latest={};
+    state.items.forEach(function(i){var k=serKey(i),g=latest[k];if(!g||i.date>g.date||(i.date===g.date&&i.id>g.id))latest[k]=i});
+    var list=[],keys={};
+    Object.keys(latest).forEach(function(k){
+      var l=latest[k];
+      if(l.rec==="m"||l.rec==="y"){
+        keys[k]=1;
+        list.push({key:k,name:l.who||l.cat,c:l.c,cat:l.cat,rec:l.rec,day:+l.date.slice(8,10),month:+l.date.slice(5,7),item:l});
+      }
+    });
+    list.sort(function(a,b){return b.c-a.c});
+    return {list:list,keys:keys};
+  }
+  function kindOf(i,S){return i.one?"one":((i.rec||S.keys[serKey(i)])?"fixed":"everyday")}
+  function dueIn(s,key){return s.rec==="m"||(s.rec==="y"&&s.month===+key.slice(5,7))}
+  function paidIn(s,key){return state.items.some(function(i){return serKey(i)===s.key&&i.date.slice(0,7)===key})}
+  function fixedFor(key,S){
+    var byCat={},list=[],total=0;
+    S.list.forEach(function(s){var due=dueIn(s,key);list.push({s:s,due:due});if(due){byCat[s.cat]=(byCat[s.cat]||0)+s.c;total+=s.c}});
+    return {byCat:byCat,list:list,total:total};
+  }
+  function ordinal(n){var v=n%100;return n+(["th","st","nd","rd"][(v-20)%10]||["th","st","nd","rd"][v]||"th")}
+  function everydaySum(key,upTo,S){
+    var t=0;state.items.forEach(function(i){if(i.date.slice(0,7)===key&&+i.date.slice(8,10)<=upTo&&kindOf(i,S)==="everyday")t+=i.c});return t;
+  }
+  function comparePrev(key,isCur,S){
+    var lim=isCur?new Date().getDate():31,pk=shiftMonth(key,-1);
+    var cur=everydaySum(key,lim,S),prev=everydaySum(pk,lim,S);
+    if(!(prev>0))return null;
+    return {diff:cur-prev,pm:monthName(pk,{month:"long"}),isCur:isCur};
+  }
+  function looksRecurring(t){return /(netflix|spotify|prime|hotstar|youtube|icloud|google one|jio|airtel|vodafone|rent|emi|loan|insurance|electricity|broadband|wi-?fi|maintenance|membership|gym|subscription|premium|bajaj)/i.test(t||"")}
+
+  /* Everyday limits come ONLY from full past months. Fixed payments and one-time costs are kept separate and never scaled. */
   function baselineInfo(){
-    var now=new Date(),nowKey=ym(now),per={},one={};
+    var nowKey=ym(new Date()),S=getSeries(),per={},one={},tot={},days={};
     state.items.forEach(function(i){
-      var k=i.date.slice(0,7);
+      var k=i.date.slice(0,7);if(k>=nowKey)return;
       if(i.one){one[k]=(one[k]||0)+i.c;return}
+      tot[k]=(tot[k]||0)+i.c;
+      (days[k]=days[k]||{})[+i.date.slice(8,10)]=1;
+      if(i.rec||S.keys[serKey(i)])return;
       var m=per[k]=per[k]||{};m[i.cat]=(m[i.cat]||0)+i.c;
     });
-    var past=Object.keys(per).filter(function(k){return k<nowKey}).sort().reverse().slice(0,3);
-    var use,scale=1,basis;
-    if(past.length){use=past;basis=past.length===1?"your last full month":"your last "+past.length+" full months"}
-    else if(per[nowKey]){
-      use=[nowKey];
-      var dim=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
-      scale=dim/Math.max(now.getDate(),1);
-      basis="this month so far, projected to a full month";
-    } else return null;
-    var tot={};
-    use.forEach(function(k){Object.keys(per[k]).forEach(function(c){tot[c]=(tot[c]||0)+per[k][c]})});
+    var full=Object.keys(days).filter(function(k){
+      var d=Object.keys(days[k]).map(Number);return per[k]&&(Math.max.apply(null,d)-Math.min.apply(null,d)>=18||d.length>=12);
+    }).sort().reverse().slice(0,3);
+    if(!full.length)return null;
+    var sums={};
+    full.forEach(function(k){Object.keys(per[k]).forEach(function(c){sums[c]=(sums[c]||0)+per[k][c]})});
     var rows={},any=false;
-    Object.keys(tot).forEach(function(c){
-      var avg=Math.round(tot[c]/use.length*scale/100)*100;
-      if(avg<=0)return;
+    Object.keys(sums).forEach(function(c){
+      var avg=Math.round(sums[c]/full.length/100)*100;if(avg<=0)return;
       rows[c]={avg:avg,sug:suggest(c,avg)};any=true;
     });
     if(!any)return null;
-    var oneSum=0;use.forEach(function(k){oneSum+=one[k]||0});
-    return {rows:rows,basis:basis,one:oneSum};
+    var oneSum=0;full.forEach(function(k){oneSum+=one[k]||0});
+    return {rows:rows,one:oneSum,lastTotal:tot[full[0]]||0,lastName:monthName(full[0],{month:"long"}),
+      basis:full.length===1?"your everyday spending in "+monthName(full[0],{month:"long"}):"your everyday spending over the last "+full.length+" full months"};
   }
   function budgetFor(key){
     var ks=Object.keys(state.budgets).filter(function(k){return k<=key}).sort().reverse();
@@ -828,45 +880,43 @@
   }
 
   /* ---------- overview ---------- */
-  function cheerText(items,total,prevTotal,prevName,isCur){
+  function cheerText(items,cmp,isCur){
     var u=th().unit,day=new Date().getDate();
     if(!isCur)return "Here's how that month went. Every month teaches us something for the next.";
     if(!items.length)return "A fresh page. Log what you spend and we'll find easy wins together.";
-    if(prevTotal>0&&total<prevTotal)return "You're "+money(prevTotal-total)+" under "+prevName+". Keep that momentum going!";
-    if(prevTotal>0&&total>prevTotal)return "A little above "+prevName+" so far. No stress: the Plan tab has easy wins.";
+    if(cmp&&cmp.diff<0)return "Your everyday spending is "+money(-cmp.diff)+" lower than the same days in "+cmp.pm+". Keep that momentum going!";
+    if(cmp&&cmp.diff>0)return "Everyday spending is a little above the same days in "+cmp.pm+". No stress: the Plan tab has easy wins.";
     var tips=["Every "+u+" you keep is a "+u+" working for you.","Small choices add up. You've got this.","Tracking is the hardest part, and you're already doing it."];
     return tips[day%tips.length];
   }
   function renderOverview(){
     var now=new Date(),nowKey=ym(now),isCur=viewMonth===nowKey,T=th();
-    var items=monthItems(viewMonth),total=sum(items);
+    var items=monthItems(viewMonth),total=sum(items),S=getSeries();
     var byCat={};items.forEach(function(i){byCat[i.cat]=(byCat[i.cat]||0)+i.c});
     var rows=Object.keys(byCat).map(function(k){return {n:k,c:byCat[k]}}).sort(desc);
     if(ui.filter&&!applyFilter(items).length)ui.filter=null;
 
-    var prevKey=shiftMonth(viewMonth,-1),prevTotal=sum(monthItems(prevKey)),pm=monthName(prevKey,{month:"long"});
+    var cmp=comparePrev(viewMonth,isCur,S);
     $("greet").textContent=T.greet;
     if(T.id==="inr")$("cheer").innerHTML="Let\u2019s start fresh.<br>Find your balance and<br>make every rupee count.";
-    else $("cheer").textContent=cheerText(items,total,prevTotal,pm,isCur);
-    var d=$("delta");
+    else $("cheer").textContent=cheerText(items,cmp,isCur);
+    var d=$("delta"),same=cmp&&cmp.isCur?"the same days in ":"";
     if(!items.length)d.textContent="Nothing logged yet";
-    else if(prevTotal>0){
-      var diff=total-prevTotal;
-      d.textContent=diff===0?"Same as "+pm:(diff>0?"\u2191 ":"\u2193 ")+money(Math.abs(diff))+(diff>0?" more":" less")+" than "+pm;
-    } else d.textContent=items.length+(items.length===1?" purchase":" purchases");
+    else if(cmp)d.textContent=cmp.diff===0?"Everyday spending: same as "+same+cmp.pm:"Everyday "+(cmp.diff>0?"\u2191 ":"\u2193 ")+money(Math.abs(cmp.diff))+(cmp.diff>0?" more":" less")+" than "+same+cmp.pm;
+    else d.textContent=items.length+(items.length===1?" purchase":" purchases");
     $("delta2").textContent=d.textContent;
 
     var tv=$("total"),txt=money(total);
     tv.textContent=txt;tv.className="cval"+(txt.length>12?" s2":txt.length>9?" s1":"");
     buildDonut(rows,total);
-    if(items.length){
-      var p=viewMonth.split("-");
-      var days=isCur?now.getDate():new Date(+p[0],+p[1],0).getDate();
-      $("avg").textContent=money(Math.round(total/days/100)*100);
-      $("big").textContent=money(Math.max.apply(null,items.map(function(i){return i.c})));
-    } else {$("avg").textContent="-";$("big").textContent="-"}
+    var ev=0,fxo=0;
+    items.forEach(function(i){if(kindOf(i,S)==="everyday")ev+=i.c;else fxo+=i.c});
+    var pp=viewMonth.split("-"),days=isCur?now.getDate():new Date(+pp[0],+pp[1],0).getDate();
+    $("avg").textContent=items.length?money(ev):"-";
+    $("avgSub").textContent=(items.length&&days>=7&&ev>0)?"about "+money(Math.round(ev/days/100)*100)+" a day":"";
+    $("big").textContent=items.length?money(fxo):"-";
 
-    $("wrapup").innerHTML=isCur?wrapUpHtml(items)+backupNudge():"";
+    $("wrapup").innerHTML=isCur?wrapUpHtml(items,S)+comingUpHtml(S)+backupNudge():"";
 
     var cf=$("clearFilter");
     if(ui.filter){cf.hidden=false;cf.innerHTML=esc(ui.filter.label)+' &nbsp;\u2715';cf.setAttribute("aria-label","Show everything")}
@@ -887,7 +937,7 @@
           var title=i.who||i.cat,sub=[i.who?i.cat:"",i.note].filter(Boolean).join(", ");
           return '<div class="swipe" data-id="'+i.id+'"><button class="delbtn" aria-label="Delete">Delete</button>'+
             '<button class="row entry" data-id="'+i.id+'">'+tile(i.cat)+
-            '<span class="mid"><span class="t1">'+esc(title)+(i.one?'<span class="tag">One-time</span>':"")+'</span>'+(sub?'<span class="t2">'+esc(sub)+'</span>':"")+'</span>'+
+            '<span class="mid"><span class="t1">'+esc(title)+(i.one?'<span class="tag">One-time</span>':(i.rec==="m"?'<span class="tag">Monthly</span>':(i.rec==="y"?'<span class="tag">Yearly</span>':"")))+'</span>'+(sub?'<span class="t2">'+esc(sub)+'</span>':"")+'</span>'+
             '<span class="val">'+money(i.c)+'</span></button></div>';
         }).join("")+'</div>';
     }).join("");
@@ -898,7 +948,22 @@
     if(state.items.length<10||(d&&Date.now()-d<30*864e5))return "";
     return '<section class="card wrap"><h3>Keep your entries safe</h3><p class="wtext" style="font-size:15px;color:var(--label2)">Save a backup file so a cleared browser or a new phone never loses them.</p><button class="btn full" data-act="backup" style="margin-top:12px">Back up now</button></section>';
   }
-  function wrapUpHtml(items){
+  function comingUpHtml(S){
+    var now=new Date(),key=ym(now),today=now.getDate(),dim=new Date(now.getFullYear(),now.getMonth()+1,0).getDate(),rows=[];
+    S.list.forEach(function(s){
+      if(!dueIn(s,key)||paidIn(s,key))return;
+      var dd=Math.min(s.day,dim);if(dd>today+5)return;
+      rows.push({s:s,dd:dd});
+    });
+    if(!rows.length)return "";
+    return '<section class="card wrap"><h3>Coming up</h3><p class="wtext" style="font-size:15px;color:var(--label2)">Fixed payments due soon that you haven\u2019t logged yet.</p>'+
+      rows.map(function(r){
+        var when=r.dd<today?"Was due on the "+ordinal(r.dd):(r.dd===today?"Due today":"Due in "+(r.dd-today)+(r.dd-today===1?" day":" days"));
+        return '<div class="duerow"><span class="mid"><span class="t1">'+esc(r.s.name)+' &nbsp;'+money(r.s.c)+'</span><span class="t2">'+when+'</span></span>'+
+          '<button class="pillbtn markpaid" data-key="'+at(r.s.key)+'">Mark paid</button></div>';
+      }).join("")+'</section>';
+  }
+  function wrapUpHtml(items,S){
     var today=ymd(new Date()),hr=new Date().getHours();
     var title=hr>=20?"End-of-day wrap-up":"Today so far";
     var td=items.filter(function(i){return i.date===today});
@@ -906,18 +971,23 @@
       return '<section class="card wrap"><h3>'+title+'</h3><p class="wtext">Nothing logged today yet. A no-spend day is a win. Anything you do spend shows up here with ideas to trim.</p></section>';
     }
     var h='<section class="card wrap"><h3>'+title+'</h3><p class="wtext">You spent <b>'+money(sum(td))+'</b> across '+td.length+(td.length===1?' purchase':' purchases')+' today.</p>';
-    var flex=td.filter(function(i){return !i.one&&FLEX.indexOf(i.cat)>=0}).sort(desc);
+    var flex=td.filter(function(i){return kindOf(i,S)==="everyday"&&FLEX.indexOf(i.cat)>=0}).sort(desc);
+    var subs=td.filter(function(i){return i.rec==="m"&&FLEX.indexOf(i.cat)>=0});
     if(flex.length){
       var top=flex[0];
       h+='<div class="cut"><div class="cuti">\u2702\uFE0F</div><div><b>This is where we can cut back</b><br>'+esc(top.who||top.cat)+' ('+money(top.c)+'). Skip something like it once a week and you keep about '+money(top.c*4)+' a month.</div></div>';
-    } else {
-      h+='<div class="cut"><div class="cuti">\uD83C\uDF31</div><div><b>Nothing to trim today</b><br>It was all essentials or one-time costs. Steady and on track.</div></div>';
+    } else if(!subs.length){
+      h+='<div class="cut"><div class="cuti">\uD83C\uDF31</div><div><b>Nothing to trim today</b><br>It was all essentials, fixed payments or one-time costs. Steady and on track.</div></div>';
     }
-    h+='<p class="wsub">Won\'t happen again next month? Mark it one-time and it stays out of your plan.</p>';
+    if(subs.length){
+      var sb=subs[0];
+      h+='<div class="cut"><div class="cuti">\uD83D\uDD01</div><div><b>Worth a quick review</b><br>'+esc(sb.who||sb.cat)+' ('+money(sb.c)+') repeats every month, about '+money(sb.c*12)+' a year. Still using it? Pausing a subscription is the easiest saving.</div></div>';
+    }
+    h+='<p class="wsub">Won\u2019t happen again? Mark it one-time and it stays out of your plan.</p>';
     h+=td.slice().sort(desc).slice(0,3).map(function(i){
+      var right=i.rec?'<span class="tag" style="margin:0">'+(i.rec==="m"?"Monthly":"Yearly")+'</span>':'<button class="onetog" data-id="'+i.id+'" aria-pressed="'+(!!i.one)+'">One-time</button>';
       return '<div class="wrow"><span class="mid"><span class="t1">'+esc(i.who||i.cat)+' &nbsp;'+money(i.c)+'</span>'+
-        (i.one?'<span class="t2">One-time cost, so it won\'t be in next month\'s plan.</span>':"")+'</span>'+
-        '<button class="onetog" data-id="'+i.id+'" aria-pressed="'+(!!i.one)+'">One-time</button></div>';
+        (i.one?'<span class="t2">One-time cost, so it won\u2019t be in next month\u2019s plan.</span>':(i.rec?'<span class="t2">Repeats, so it counts as a fixed payment in your plan.</span>':""))+'</span>'+right+'</div>';
     }).join("");
     return h+'</section>';
   }
@@ -976,48 +1046,68 @@
         }).join("")+'</div>';
     }
 
+    var S=getSeries();
     if(cb)h+='<h2>Plan for '+esc(nextName)+'</h2>';
-    var b=baselineInfo(),nb=state.budgets[nextKey]||{};
+    var b=baselineInfo(),nb=state.budgets[nextKey]||{},fx=fixedFor(nextKey,S);
     var names=CATS.map(function(k){return k.n});
+    var sugOf=function(c){var f=fx.byCat[c]||0,r=b&&b.rows[c];return (f||r)?f+(r?r.sug:0):0};
     var cats=names.slice().sort(function(x,y){
-      var ax=b&&b.rows[x]?b.rows[x].avg:-1,ay=b&&b.rows[y]?b.rows[y].avg:-1;
+      var ax=(fx.byCat[x]||0)+(b&&b.rows[x]?b.rows[x].avg:0),ay=(fx.byCat[y]||0)+(b&&b.rows[y]?b.rows[y].avg:0);
       return ay-ax||names.indexOf(x)-names.indexOf(y);
     });
-    var U=0,P=0,missing=0,explicit=0;
-    cats.forEach(function(c){
-      var r=b&&b.rows[c];
-      if(r)U+=r.avg;
-      if(nb[c]){P+=nb[c];explicit++}else if(r){P+=r.sug;missing++}
-    });
-    var S=U-P;
-    if(b||explicit){
+    var P=0,missing=0,explicit=0;
+    cats.forEach(function(c){var sg=sugOf(c);if(nb[c]){P+=nb[c];explicit++}else if(sg){P+=sg;missing++}});
+    if(P>0){
       h+='<section class="card plansum"><div class="ps">Stick to about</div><div class="pb">'+money(P)+'</div><div class="pt">'+
-        (b&&S>0?"That\u2019s "+money(S)+" less than usual. Doable, and it adds up fast. You\u2019ve got this!":"A clear target makes every spend easier. You\u2019ve got this!")+'</div></section>';
-      if(b)h+='<p class="note" style="margin-bottom:4px">Based on '+esc(b.basis)+'.'+(b.one>0?" One-time costs ("+money(b.one)+") are left out, since they won\u2019t repeat.":"")+'</p>';
+        (P===fx.total&&fx.total>0?"These are your fixed payments. Choose a total below to plan everyday spending too.":
+        (fx.total>0?"Fixed payments "+money(fx.total)+" + everyday spending "+money(Math.max(0,P-fx.total))+". ":"")+
+        (b&&b.lastTotal>P?"That\u2019s "+money(b.lastTotal-P)+" less than "+esc(b.lastName)+". Doable, and it adds up fast. You\u2019ve got this!":"A clear target makes every spend easier. You\u2019ve got this!"))+'</div></section>';
     }
+    if(b)h+='<p class="note" style="margin-bottom:4px">Everyday suggestions are based on '+esc(b.basis)+'.'+(b.one>0?" One-time costs ("+money(b.one)+") are left out, since they won\u2019t repeat.":"")+' Fixed payments are counted exactly, never estimated.</p>';
+    else h+='<p class="note" style="margin-bottom:4px">I can suggest everyday limits from your own spending once you have a full month of entries. Until then, choose a total or set limits yourself. Your fixed payments are always counted exactly.</p>';
     h+='<section class="card wrap" style="margin-top:14px"><h3 style="font-size:19px">Choose how to plan</h3>'+
       '<p class="wtext" style="font-size:15px;color:var(--label2)">Pick whichever feels easiest. You can change any limit later.</p>';
     if(b){
       if(missing)h+='<button class="btn full" id="acceptPlan" style="margin-top:12px">'+(explicit?"Fill the rest with suggestions":"Use suggestions from my spending")+'</button>';
       else h+='<p class="lead" style="margin:12px 0 0"><span class="okpill">Plan set for '+esc(nextName)+'.</span> I\u2019ll track it for you as the month goes.</p>';
       if(explicit)h+='<button class="btn ghost full" id="resetPlan" style="margin-top:10px">Reset to suggestions</button>';
-    } else {
-      h+='<p class="wtext" style="font-size:15px;color:var(--label2);margin-top:10px">For suggestions based on your own spending, log a few purchases first.</p>'+
-        '<button class="btn full" data-act="add" style="margin-top:10px">Add spending</button>';
+    } else if(!state.items.length){
+      h+='<button class="btn full" data-act="add" style="margin-top:12px">Add spending</button>';
     }
-    h+='<p class="wsub" style="margin-top:18px">Or choose a total for the month and I\u2019ll split it across categories.</p>'+
+    h+='<p class="wsub" style="margin-top:18px">Or choose a total for the month. Your fixed payments come first, and I\u2019ll split the rest across everyday categories.</p>'+
       '<div class="splitrow"><span class="sym">'+esc(state.cur)+'</span><input id="planTotal" type="text" inputmode="decimal" placeholder="Total for the month" autocomplete="off" enterkeyhint="done" aria-label="Total for the month"><button class="btn" id="splitPlan">Split it</button></div>'+
       '<p class="wsub" style="margin-top:16px">Or tap any category below to set your own limit.</p></section>';
-    h+='<div class="group" style="margin-top:14px">'+cats.map(function(c){
-      var r=b&&b.rows[c],lim=nb[c];
-      if(r){
-        var val=lim||r.sug,save=r.avg-val;
-        return '<button class="row planrow" data-cat="'+at(c)+'">'+tile(c)+'<span class="mid"><span class="t1">'+esc(c)+'</span><span class="t2">Usually '+money(r.avg)+
-          (save>0?", save "+money(save):"")+'</span></span><span class="rcol"><span class="val">'+money(val)+'</span><span class="t2">'+(lim?"your limit":"suggested")+'</span></span></button>';
-      }
-      return '<button class="row planrow" data-cat="'+at(c)+'">'+tile(c)+'<span class="mid"><span class="t1">'+esc(c)+'</span><span class="t2">No history yet</span></span><span class="rcol"><span class="val">'+
-        (lim?money(lim):"Set limit")+'</span><span class="t2">'+(lim?"your limit":"tap to set")+'</span></span></button>';
-    }).join("")+'</div><p class="note">Limits only count everyday spending. One-time costs never count against them.</p>';
+
+    var cand={};
+    state.items.forEach(function(i){
+      if(i.one||i.rec||S.keys[serKey(i)])return;
+      if(i.cat!=="Bills & rent"&&!looksRecurring(i.who))return;
+      var k=serKey(i),g=cand[k];if(!g||i.date>g.date||(i.date===g.date&&i.id>g.id))cand[k]=i;
+    });
+    var candList=Object.keys(cand).map(function(k){return cand[k]}).sort(desc).slice(0,8);
+    h+='<h2>Fixed payments</h2>';
+    if(!S.list.length){
+      h+='<div class="empty" style="padding:24px 18px"><div class="big">\uD83D\uDD01</div><h3>Add your regular payments</h3><p>Rent, EMIs, subscriptions, insurance. They count in your plan every month, and I\u2019ll remind you when one is due.</p><button class="btn" data-act="addrec">Add a recurring payment</button></div>';
+    } else {
+      h+='<div class="group">'+fx.list.map(function(o){
+        var s2=o.s,when=s2.rec==="m"?"Monthly, around the "+ordinal(s2.day):"Yearly, in "+monthName("2026-"+pad(s2.month),{month:"long"});
+        return '<button class="row serrow" data-id="'+s2.item.id+'">'+tile(s2.cat)+'<span class="mid"><span class="t1">'+esc(s2.name)+'</span><span class="t2">'+when+'</span></span>'+
+          '<span class="rcol"><span class="val">'+money(s2.c)+'</span><span class="t2">'+(o.due?"in "+esc(nextName):"not due in "+esc(nextName))+'</span></span></button>';
+      }).join("")+'</div><button class="btn ghost full" data-act="addrec" style="margin-top:10px">Add a recurring payment</button>'+
+        '<p class="note">Tap one to edit it, or to stop it repeating. Monthly payments count every month. Yearly ones count in the month they fall due.</p>';
+    }
+
+    if(candList.length){
+      h+='<p class="lead" style="margin-top:16px">These look like regular payments. Tap one to count it as monthly.</p><div class="group">'+candList.map(function(i){
+        return '<div class="row">'+tile(i.cat)+'<span class="mid"><span class="t1">'+esc(i.who||i.cat)+'</span><span class="t2">'+esc(i.cat)+', '+esc(dayLabel(i.date))+'</span></span><span class="val">'+money(i.c)+'</span><button class="pillbtn makerec" data-id="'+i.id+'" style="margin-left:6px">Monthly</button></div>';
+      }).join("")+'</div>';
+    }
+    h+='<h2>Limits by category</h2><div class="group">'+cats.map(function(c){
+      var f=fx.byCat[c]||0,r=b&&b.rows[c],lim=nb[c],sg=sugOf(c),val=lim||sg;
+      var sub=f&&r?"Fixed "+money(f)+" + everyday usually "+money(r.avg):(f?"Fixed "+money(f):(r?"Everyday, usually "+money(r.avg)+(!lim&&r.avg>r.sug?", save "+money(r.avg-r.sug):""):"No history yet"));
+      return '<button class="row planrow" data-cat="'+at(c)+'">'+tile(c)+'<span class="mid"><span class="t1">'+esc(c)+'</span><span class="t2">'+sub+'</span></span>'+
+        '<span class="rcol"><span class="val">'+(val?money(val):"Set limit")+'</span><span class="t2">'+(lim?"your limit":(sg?"suggested":"tap to set"))+'</span></span></button>';
+    }).join("")+'</div><p class="note">Limits count everyday spending and fixed payments together. One-time costs never count against them.</p>';
     $("planBody").innerHTML=h;
   }
 
@@ -1101,7 +1191,15 @@
       return '<button type="button" class="mchip" data-name="'+at(n)+'" aria-pressed="'+(mk(n)===cur)+'">'+esc(n)+'</button>';
     }).join("");
   }
-  function openSheet(item){
+  var pickedType="e";
+  var TYPE_NOTE={e:"Part of your normal spending.",o:"Won\u2019t repeat, so it stays out of your plan.",m:"Repeats every month. Counts as a fixed payment in your plan.",y:"Repeats once a year. Counts in the month it falls due."};
+  function setType(t){
+    pickedType=t;
+    var b=$("seg4").querySelectorAll("button");
+    for(var i=0;i<b.length;i++)b[i].setAttribute("aria-checked",b[i].getAttribute("data-t")===t?"true":"false");
+    $("typeNote").textContent=TYPE_NOTE[t];
+  }
+  function openSheet(item,preset){
     editingId=item?item.id:null;
     catTouched=!!item;
     pickedCat=item?item.cat:(state.lastCat||CATS[0].n);
@@ -1110,7 +1208,7 @@
     $("sheetCur").textContent=state.cur;
     $("who").value=item&&item.who?item.who:"";
     $("note").value=item?item.note:"";
-    $("one").checked=!!(item&&item.one);
+    setType(item?(item.one?"o":(item.rec||"e")):(preset||"e"));
     var today=ymd(new Date());
     $("date").max=today;
     $("date").value=item?item.date:(viewMonth===ym(new Date())?today:viewMonth+"-01");
@@ -1125,21 +1223,29 @@
   async function onSave(){
     var n=parseFloat(amt);if(!(n>0))return;
     var date=$("date").value||ymd(new Date());
-    var c=Math.round(n*100),note=$("note").value.trim(),who=$("who").value.trim(),one=$("one").checked;
+    var c=Math.round(n*100),note=$("note").value.trim(),who=$("who").value.trim(),one=pickedType==="o",rec=(pickedType==="m"||pickedType==="y")?pickedType:"";
     var wasEdit=!!editingId;
+    var dup=!wasEdit&&state.items.some(function(i){return i.date===date&&i.c===c&&i.cat===pickedCat&&mk(i.who)===mk(who)});
     if(looksSensitive(who)||looksSensitive(note)){
       toast("That looks like a card, account, phone, email or ID number. For your safety I don't save those. Please remove it.",null,null,6500);
       return;
     }
     if(editingId){
-      state.items.forEach(function(i){if(i.id===editingId){i.c=c;i.cat=pickedCat;i.note=note;i.who=who;i.one=one;i.date=date}});
+      state.items.forEach(function(i){if(i.id===editingId){i.c=c;i.cat=pickedCat;i.note=note;i.who=who;i.one=one;i.rec=rec;i.date=date}});
     } else {
-      state.items.push({id:Date.now(),c:c,cat:pickedCat,note:note,who:who,one:one,date:date});
+      state.items.push({id:Date.now(),c:c,cat:pickedCat,note:note,who:who,one:one,rec:rec,date:date});
     }
     state.lastCat=pickedCat;
     viewMonth=date.slice(0,7);ui.filter=null;
     haptic();closeSheet();render();
-    toast(wasEdit?"Changes saved":(one?"Added "+money(c)+" as a one-time cost":"Added "+money(c)+" to "+pickedCat+". Every entry counts!"));
+    var added=wasEdit?null:state.items[state.items.length-1];
+    if(dup&&added){
+      toast("Looks like a repeat of one you already logged. Added anyway.","Undo",function(){state.items=state.items.filter(function(x){return x.id!==added.id});render();persist()},6000);
+    } else if(added&&!one&&!rec&&looksRecurring(who+" "+note)&&!getSeries().keys[serKey(added)]){
+      toast("Does this repeat every month?","Yes, repeat",function(){added.rec="m";render();persist()},6000);
+    } else {
+      toast(wasEdit?"Changes saved":(one?"Added "+money(c)+" as a one-time cost":(rec?"Added "+money(c)+" as a "+(rec==="m"?"monthly":"yearly")+" payment":"Added "+money(c)+" to "+pickedCat+". Every entry counts!")));
+    }
     await persist();
   }
   function deleteItem(id){
@@ -1152,9 +1258,9 @@
 
   /* ---------- limit sheet ---------- */
   function openLimit(c){
-    var nextKey=shiftMonth(ym(new Date()),1),b=baselineInfo();
+    var nextKey=shiftMonth(ym(new Date()),1),b=baselineInfo(),fxc=fixedFor(nextKey,getSeries()).byCat[c]||0;
     limCat=c;
-    var r=(b&&b.rows[c])||{avg:0,sug:0},cur=(state.budgets[nextKey]||{})[c];
+    var r0=(b&&b.rows[c])||{avg:0,sug:0},r={avg:r0.avg+fxc,sug:(r0.avg||fxc)?r0.sug+fxc:0},cur=(state.budgets[nextKey]||{})[c];
     $("limTitle").textContent=c+" limit";
     $("limSym").textContent=state.cur;
     $("limInput").value=(cur||r.sug)?String((cur||r.sug)/100):"";
@@ -1182,26 +1288,35 @@
   async function splitPlan(){
     var v=parseNum($("planTotal").value);
     if(!(v>0)){toast("Type the total you\u2019d like to spend in the month");$("planTotal").focus();return}
-    var total=Math.round(v*100),nextKey=shiftMonth(ym(new Date()),1),b=baselineInfo(),shares={};
-    var DEF={"Groceries":.22,"Bills & rent":.30,"Food & drinks":.12,"Transport":.10,"Shopping":.08,"Health":.06,"Fun":.07,"Other":.05};
-    if(b){
-      var U=0;Object.keys(b.rows).forEach(function(c){U+=b.rows[c].avg});
-      Object.keys(b.rows).forEach(function(c){shares[c]=b.rows[c].avg/U});
-    } else shares=DEF;
-    var m={};Object.keys(shares).forEach(function(c){m[c]=nice(total*shares[c])});
-    state.budgets[nextKey]=m;
-    haptic();render();
-    toast("Split "+money(total)+" across "+Object.keys(m).length+" categories. You\u2019ve got this!",null,null,3200);
+    var total=Math.round(v*100),nextKey=shiftMonth(ym(new Date()),1),b=baselineInfo(),fx=fixedFor(nextKey,getSeries());
+    var DEF={"Groceries":.30,"Food & drinks":.18,"Transport":.14,"Shopping":.12,"Fun":.10,"Health":.08,"Other":.05,"Bills & rent":.03},shares={};
+    if(b){var U=0;Object.keys(b.rows).forEach(function(c){U+=b.rows[c].avg});Object.keys(b.rows).forEach(function(c){shares[c]=b.rows[c].avg/U})}
+    else shares=DEF;
+    var rem=total-fx.total,m={};
+    if(rem<=0){
+      Object.keys(fx.byCat).forEach(function(c){m[c]=fx.byCat[c]});
+      state.budgets[nextKey]=m;haptic();render();
+      toast("Your fixed payments ("+money(fx.total)+") already use up that total. Try a larger one.",null,null,4200);
+      await persist();return;
+    }
+    Object.keys(shares).forEach(function(c){m[c]=(fx.byCat[c]||0)+nice(rem*shares[c])});
+    Object.keys(fx.byCat).forEach(function(c){if(!m[c])m[c]=fx.byCat[c]});
+    state.budgets[nextKey]=m;haptic();render();
+    toast("Split "+money(total)+": "+money(fx.total)+" fixed, the rest across everyday categories. You\u2019ve got this!",null,null,3600);
     await persist();
   }
   async function acceptPlan(reset){
     var nextKey=shiftMonth(ym(new Date()),1),b=baselineInfo();if(!b)return;
-    var cur=reset?{}:(state.budgets[nextKey]||{});
-    Object.keys(b.rows).forEach(function(c){if(!cur[c])cur[c]=b.rows[c].sug});
-    state.budgets[nextKey]=cur;
-    haptic();render();
+    var fx=fixedFor(nextKey,getSeries()),cur=reset?{}:(state.budgets[nextKey]||{});
+    CATS.forEach(function(k){var c=k.n,f=fx.byCat[c]||0,r=b.rows[c],sg=(f||r)?f+(r?r.sug:0):0;if(sg&&!cur[c])cur[c]=sg});
+    state.budgets[nextKey]=cur;haptic();render();
     toast("Plan set for "+monthName(nextKey,{month:"long"})+". Let's make it a great month!");
     await persist();
+  }
+  async function markPaid(key){
+    var s=getSeries().list.filter(function(x){return x.key===key})[0];if(!s)return;
+    state.items.push({id:Date.now(),c:s.c,cat:s.cat,note:s.item.note||"",who:s.item.who||"",one:false,rec:s.rec,date:ymd(new Date())});
+    haptic();render();toast("Marked paid: "+s.name+" "+money(s.c));await persist();
   }
 
   /* ---------- swipe to delete ---------- */
@@ -1289,6 +1404,7 @@
   $("limSave").addEventListener("click",saveLimit);
   $("limRemove").addEventListener("click",removeLimit);
   $("limSuggest").addEventListener("click",function(){$("limInput").value=$("limSuggest").getAttribute("data-v")});
+  $("seg4").addEventListener("click",function(e){var b=e.target.closest("button");if(b){haptic();setType(b.getAttribute("data-t"))}});
   $("keypad").addEventListener("click",function(e){var b=e.target.closest(".key");if(b)press(b.getAttribute("data-k"))});
 
   $("cats").addEventListener("click",function(e){
@@ -1338,10 +1454,11 @@
 
   $("wrapup").addEventListener("click",function(e){
     if(e.target.closest("[data-act=backup]")){doBackup();return}
+    var mp=e.target.closest(".markpaid");if(mp){markPaid(mp.getAttribute("data-key"));return}
     var b=e.target.closest(".onetog");if(!b)return;
     var id=+b.getAttribute("data-id");
     var it=state.items.filter(function(i){return i.id===id})[0];if(!it)return;
-    it.one=!it.one;haptic();render();
+    it.one=!it.one;if(it.one)it.rec="";haptic();render();
     toast(it.one?"Marked one-time. It won't count toward next month's plan.":"Back in your regular spending.");
     persist();
   });
@@ -1350,6 +1467,11 @@
     var r=e.target.closest(".planrow");
     if(r){openLimit(r.getAttribute("data-cat"));return}
     if(e.target.closest("[data-act=add]")){openSheet(null);return}
+    if(e.target.closest("[data-act=addrec]")){openSheet(null,"m");return}
+    var mr=e.target.closest(".makerec");
+    if(mr){var mid=+mr.getAttribute("data-id"),mi=state.items.filter(function(x){return x.id===mid})[0];if(mi){mi.rec="m";mi.one=false;haptic();render();toast("Counted as a monthly payment","Undo",function(){mi.rec="";render();persist()},4000);persist()}return}
+    var sr=e.target.closest(".serrow");
+    if(sr){var id=+sr.getAttribute("data-id"),it=state.items.filter(function(x){return x.id===id})[0];if(it)openSheet(it);return}
     if(e.target.closest("#splitPlan")){splitPlan();return}
     if(e.target.closest("#acceptPlan"))acceptPlan(false);
     else if(e.target.closest("#resetPlan"))acceptPlan(true);
@@ -1452,8 +1574,8 @@
     var rows=state.items.slice().sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:a.id-b.id});
     if(!rows.length){toast("Nothing to export yet");return}
     var q=function(s){s=String(s||"");if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"'};
-    var csv="Date,Category,Where,Note,One-time,Amount\n"+rows.map(function(i){
-      return [i.date,q(i.cat),q(i.who),q(i.note),i.one?"yes":"no",(i.c/100).toFixed(2)].join(",");
+    var csv="Date,Category,Where,Note,Type,Amount\n"+rows.map(function(i){
+      return [i.date,q(i.cat),q(i.who),q(i.note),(i.one?"one-time":(i.rec==="m"?"monthly":(i.rec==="y"?"yearly":"everyday"))),(i.c/100).toFixed(2)].join(",");
     }).join("\n");
     saveFile("spending-"+ymd(new Date())+".csv","text/csv",csv);
   });
